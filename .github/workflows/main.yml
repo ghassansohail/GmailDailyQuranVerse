@@ -1,0 +1,38 @@
+name: Daily Quran Verse
+
+on:
+  schedule:
+    # 07:00 AM GST (Bahrain/UAE) = 03:00 UTC
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  send-verse:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Send today's Quran verse
+        env:
+          GMAIL_ADDRESS:      ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python scripts/send_verse.py
+
+      - name: Commit updated verse pointer
+        run: |
+          git config user.name  "quran-bot"
+          git config user.email "quran-bot@users.noreply.github.com"
+          git add state.json
+          git diff --cached --quiet || git commit -m "chore: advance verse pointer [skip ci]"
+          git push
