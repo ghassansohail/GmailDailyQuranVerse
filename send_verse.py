@@ -34,7 +34,7 @@ SURAHS = [
     (111,5),(112,4),(113,5),(114,6),
 ]
 
-STATE_FILE = os.path.join(os.path.dirname(__file__), "..", "state.json")
+STATE_FILE = os.path.join(os.path.dirname(__file__), "state.json")
 
 GMAIL_ADDRESS      = os.environ.get("GMAIL_ADDRESS", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
