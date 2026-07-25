@@ -67,25 +67,70 @@ def next_verse(surah: int, ayah: int) -> tuple[int, int]:
 
 # ── Quran API ─────────────────────────────────────────────────────────────────
 
+CDN_BASE = "https://cdn.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions"
+
+# Edition identifiers on fawazahmed0/quran-api
+EDITION_ARABIC  = "ara-quranuthmani"
+EDITION_ENGLISH = "eng-sahih"
+EDITION_URDU    = "urd-jalandhry"
+
+# Surah English/Arabic display names (index 0 unused, 1-114 = surah number)
+SURAH_NAMES_EN = [
+    "", "Al-Faatiha","Al-Baqarah","Aal-i-Imraan","An-Nisaa","Al-Maaida","Al-An'aam","Al-A'raaf",
+    "Al-Anfaal","At-Tawba","Yunus","Hud","Yusuf","Ar-Ra'd","Ibrahim","Al-Hijr","An-Nahl",
+    "Al-Israa","Al-Kahf","Maryam","Taa-Haa","Al-Anbiyaa","Al-Hajj","Al-Muminoon","An-Noor",
+    "Al-Furqaan","Ash-Shu'araa","An-Naml","Al-Qasas","Al-Ankaboot","Ar-Room","Luqman","As-Sajda",
+    "Al-Ahzaab","Saba","Faatir","Yaseen","As-Saaffaat","Saad","Az-Zumar","Al-Ghaafir",
+    "Fussilat","Ash-Shura","Az-Zukhruf","Ad-Dukhaan","Al-Jaathiya","Al-Ahqaf","Muhammad","Al-Fath",
+    "Al-Hujuraat","Qaaf","Adh-Dhaariyat","At-Tur","An-Najm","Al-Qamar","Ar-Rahmaan","Al-Waaqia",
+    "Al-Hadid","Al-Mujaadila","Al-Hashr","Al-Mumtahana","As-Saff","Al-Jumu'a","Al-Munaafiqoon",
+    "At-Taghaabun","At-Talaaq","At-Tahrim","Al-Mulk","Al-Qalam","Al-Haaqqa","Al-Ma'aarij","Nooh",
+    "Al-Jinn","Al-Muzzammil","Al-Muddaththir","Al-Qiyaama","Al-Insaan","Al-Mursalaat","An-Naba",
+    "An-Naazi'aat","Abasa","At-Takwir","Al-Infitaar","Al-Mutaffifin","Al-Inshiqaaq","Al-Burooj",
+    "At-Taariq","Al-A'laa","Al-Ghaashiya","Al-Fajr","Al-Balad","Ash-Shams","Al-Lail","Ad-Dhuhaa",
+    "Ash-Sharh","At-Tin","Al-Alaq","Al-Qadr","Al-Bayyina","Az-Zalzala","Al-Aadiyaat","Al-Qaari'a",
+    "At-Takaathur","Al-Asr","Al-Humaza","Al-Fil","Quraish","Al-Maa'un","Al-Kawthar","Al-Kaafiroon",
+    "An-Nasr","Al-Masad","Al-Ikhlaas","Al-Falaq","An-Naas",
+]
+SURAH_NAMES_AR = [
+    "", "الفاتحة","البقرة","آل عمران","النساء","المائدة","الأنعام","الأعراف","الأنفال","التوبة",
+    "يونس","هود","يوسف","الرعد","إبراهيم","الحجر","النحل","الإسراء","الكهف","مريم","طه",
+    "الأنبياء","الحج","المؤمنون","النور","الفرقان","الشعراء","النمل","القصص","العنكبوت","الروم",
+    "لقمان","السجدة","الأحزاب","سبإ","فاطر","يس","الصافات","ص","الزمر","غافر","فصلت","الشورى",
+    "الزخرف","الدخان","الجاثية","الأحقاف","محمد","الفتح","الحجرات","ق","الذاريات","الطور","النجم",
+    "القمر","الرحمن","الواقعة","الحديد","المجادلة","الحشر","الممتحنة","الصف","الجمعة","المنافقون",
+    "التغابن","الطلاق","التحريم","الملك","القلم","الحاقة","المعارج","نوح","الجن","المزمل","المدثر",
+    "القيامة","الإنسان","المرسلات","النبأ","النازعات","عبس","التكوير","الإنفطار","المطففين",
+    "الإنشقاق","البروج","الطارق","الأعلى","الغاشية","الفجر","البلد","الشمس","الليل","الضحى",
+    "الشرح","التين","العلق","القدر","البينة","الزلزلة","العاديات","القارعة","التكاثر","العصر",
+    "الهمزة","الفيل","قريش","الماعون","الكوثر","الكافرون","النصر","المسد","الإخلاص","الفلق","الناس",
+]
+
+
 def get_verse(surah: int, ayah: int) -> dict:
-    editions = "quran-uthmani,en.sahih,ur.jalandhry"
-    url = f"https://api.alquran.cloud/v1/ayah/{surah}:{ayah}/editions/{editions}"
-    print(f"🌐 Fetching {surah}:{ayah} from AlQuran.cloud …")
-    req = urllib.request.Request(url, headers={"User-Agent": "QuranDailyBot/3.0"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    if data.get("code") != 200:
-        raise RuntimeError(f"AlQuran API error: {data}")
-    results = data["data"]
+    print(f"🌐 Fetching {surah}:{ayah} from Quran API (jsDelivr CDN) …")
+
+    arabic  = _fetch_single(EDITION_ARABIC,  surah, ayah)
+    english = _fetch_single(EDITION_ENGLISH, surah, ayah)
+    urdu    = _fetch_single(EDITION_URDU,    surah, ayah)
+
     return {
         "surah_number":  surah,
         "ayah_number":   ayah,
-        "surah_name_en": results[0]["surah"]["englishName"],
-        "surah_name_ar": results[0]["surah"]["name"],
-        "arabic":        results[0]["text"],
-        "english":       results[1]["text"],
-        "urdu":          results[2]["text"],
+        "surah_name_en": SURAH_NAMES_EN[surah],
+        "surah_name_ar": SURAH_NAMES_AR[surah],
+        "arabic":        arabic,
+        "english":       english,
+        "urdu":          urdu,
     }
+
+
+def _fetch_single(edition: str, surah: int, ayah: int) -> str:
+    url = f"{CDN_BASE}/{edition}/{surah}/{ayah}.json"
+    req = urllib.request.Request(url, headers={"User-Agent": "QuranDailyBot/4.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return data["text"]
 
 
 # ── Email builder ─────────────────────────────────────────────────────────────
@@ -93,69 +138,38 @@ def get_verse(surah: int, ayah: int) -> dict:
 def build_email(v: dict) -> MIMEMultipart:
     subject = f"🌙 Quran Daily — Surah {v['surah_number']} ({v['surah_name_en']}), Ayah {v['ayah_number']}"
 
-    html = f"""
-<html><body style="font-family: Georgia, serif; max-width: 600px; margin: 40px auto; color: #222; line-height: 1.8;">
-  <h2 style="color: #2e7d32; border-bottom: 1px solid #c8e6c9; padding-bottom: 8px;">
-    🌙 Quran — Daily Verse
-  </h2>
-  <p style="color: #555; font-size: 14px;">
-    <strong>Surah {v['surah_number']}: {v['surah_name_en']}</strong>
-    &nbsp;({v['surah_name_ar']})&nbsp;|&nbsp;Ayah {v['ayah_number']}
-  </p>
-
-  <table width="100%" style="border-top: 1px solid #eee; margin-top: 16px;">
-
-    <tr><td style="padding: 16px 0 4px;">
-      <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px;">Arabic</span>
-    </td></tr>
-    <tr><td>
-      <p style="font-size: 26px; text-align: right; direction: rtl; font-family: 'Traditional Arabic', serif; color: #1a1a1a; line-height: 2;">
-        {v['arabic']}
-      </p>
-    </td></tr>
-
-    <tr><td style="padding: 16px 0 4px; border-top: 1px solid #eee;">
-      <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px;">English — Sahih International</span>
-    </td></tr>
-    <tr><td>
-      <p style="font-size: 16px; color: #333; font-style: italic;">
-        {v['english']}
-      </p>
-    </td></tr>
-
-    <tr><td style="padding: 16px 0 4px; border-top: 1px solid #eee;">
-      <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px;">Urdu — Fateh Muhammad Jalandhry</span>
-    </td></tr>
-    <tr><td>
-      <p style="font-size: 18px; text-align: right; direction: rtl; font-family: 'Noto Nastaliq Urdu', serif; color: #1a1a1a; line-height: 2.2;">
-        {v['urdu']}
-      </p>
-    </td></tr>
-
-  </table>
-
-  <p style="margin-top: 32px; font-size: 12px; color: #aaa; border-top: 1px solid #eee; padding-top: 12px;">
-    May Allah guide us all. آمین
-  </p>
-</body></html>
-"""
-
-    plain = (
-        f"Quran — Daily Verse\n"
-        f"Surah {v['surah_number']}: {v['surah_name_en']} ({v['surah_name_ar']}) | Ayah {v['ayah_number']}\n"
-        f"{'─' * 40}\n\n"
-        f"Arabic:\n{v['arabic']}\n\n"
-        f"English:\n{v['english']}\n\n"
-        f"Urdu:\n{v['urdu']}\n\n"
-        f"May Allah guide us all. آمین"
+    whatsapp = (
+        f"🌙 *Quran — Daily Verse*\n"
+        f"📖 *Surah {v['surah_number']}: {v['surah_name_en']}* ({v['surah_name_ar']}) | *Ayah {v['ayah_number']}*\n"
+        f"➖➖➖➖➖➖➖➖➖➖\n\n"
+        f"🔤 *Arabic:*\n{v['arabic']}\n\n"
+        f"🇬🇧 *English:*\n_{v['english']}_\n\n"
+        f"🇵🇰 *Urdu:*\n{v['urdu']}\n\n"
+        f"➖➖➖➖➖➖➖➖➖➖\n"
+        f"_May Allah guide us all. آمین_"
     )
 
-    msg = MIMEMultipart("alternative")
+    instagram = (
+        f"🌙 Quran — Daily Verse\n"
+        f"📖 Surah {v['surah_number']}: {v['surah_name_en']} ({v['surah_name_ar']}) | Ayah {v['ayah_number']}\n\n"
+        f"🔤 Arabic:\n{v['arabic']}\n\n"
+        f"🇬🇧 English:\n{v['english']}\n\n"
+        f"🇵🇰 Urdu:\n{v['urdu']}\n\n"
+        f"May Allah guide us all. آمین\n\n"
+        f"#Quran #Islam #DailyQuran #QuranVerse #IslamicReminder #Alhamdulillah"
+    )
+
+    body = (
+        f"— WHATSAPP —\n\n{whatsapp}\n\n\n"
+        f"{'═' * 40}\n\n"
+        f"— INSTAGRAM —\n\n{instagram}"
+    )
+
+    msg = MIMEMultipart()
     msg["Subject"] = subject
     msg["From"]    = f"Quran Daily <{GMAIL_ADDRESS}>"
     msg["To"]      = GMAIL_ADDRESS
-    msg.attach(MIMEText(plain, "plain", "utf-8"))
-    msg.attach(MIMEText(html,  "html",  "utf-8"))
+    msg.attach(MIMEText(body, "plain", "utf-8"))
     return msg
 
 
