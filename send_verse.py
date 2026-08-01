@@ -65,26 +65,83 @@ def next_verse(surah: int, ayah: int) -> tuple[int, int]:
         return 1, 1
 
 
-# ── Quran API ─────────────────────────────────────────────────────────────────
+# ── Quran API & static data ───────────────────────────────────────────────────
 
-def get_verse(surah: int, ayah: int) -> dict:
-    editions = "quran-uthmani,en.sahih,ur.jalandhry"
+ARABIC_FILE = os.path.join(os.path.dirname(__file__), "quran_arabic.json")
+
+SURAH_NAMES_EN = [
+    "", "Al-Faatiha","Al-Baqarah","Aal-i-Imraan","An-Nisaa","Al-Maaida","Al-An'aam","Al-A'raaf",
+    "Al-Anfaal","At-Tawba","Yunus","Hud","Yusuf","Ar-Ra'd","Ibrahim","Al-Hijr","An-Nahl",
+    "Al-Israa","Al-Kahf","Maryam","Taa-Haa","Al-Anbiyaa","Al-Hajj","Al-Muminoon","An-Noor",
+    "Al-Furqaan","Ash-Shu'araa","An-Naml","Al-Qasas","Al-Ankaboot","Ar-Room","Luqman","As-Sajda",
+    "Al-Ahzaab","Saba","Faatir","Yaseen","As-Saaffaat","Saad","Az-Zumar","Al-Ghaafir",
+    "Fussilat","Ash-Shura","Az-Zukhruf","Ad-Dukhaan","Al-Jaathiya","Al-Ahqaf","Muhammad","Al-Fath",
+    "Al-Hujuraat","Qaaf","Adh-Dhaariyat","At-Tur","An-Najm","Al-Qamar","Ar-Rahmaan","Al-Waaqia",
+    "Al-Hadid","Al-Mujaadila","Al-Hashr","Al-Mumtahana","As-Saff","Al-Jumu'a","Al-Munaafiqoon",
+    "At-Taghaabun","At-Talaaq","At-Tahrim","Al-Mulk","Al-Qalam","Al-Haaqqa","Al-Ma'aarij","Nooh",
+    "Al-Jinn","Al-Muzzammil","Al-Muddaththir","Al-Qiyaama","Al-Insaan","Al-Mursalaat","An-Naba",
+    "An-Naazi'aat","Abasa","At-Takwir","Al-Infitaar","Al-Mutaffifin","Al-Inshiqaaq","Al-Burooj",
+    "At-Taariq","Al-A'laa","Al-Ghaashiya","Al-Fajr","Al-Balad","Ash-Shams","Al-Lail","Ad-Dhuhaa",
+    "Ash-Sharh","At-Tin","Al-Alaq","Al-Qadr","Al-Bayyina","Az-Zalzala","Al-Aadiyaat","Al-Qaari'a",
+    "At-Takaathur","Al-Asr","Al-Humaza","Al-Fil","Quraish","Al-Maa'un","Al-Kawthar","Al-Kaafiroon",
+    "An-Nasr","Al-Masad","Al-Ikhlaas","Al-Falaq","An-Naas",
+]
+SURAH_NAMES_AR = [
+    "", "الفاتحة","البقرة","آل عمران","النساء","المائدة","الأنعام","الأعراف","الأنفال","التوبة",
+    "يونس","هود","يوسف","الرعد","إبراهيم","الحجر","النحل","الإسراء","الكهف","مريم","طه",
+    "الأنبياء","الحج","المؤمنون","النور","الفرقان","الشعراء","النمل","القصص","العنكبوت","الروم",
+    "لقمان","السجدة","الأحزاب","سبإ","فاطر","يس","الصافات","ص","الزمر","غافر","فصلت","الشورى",
+    "الزخرف","الدخان","الجاثية","الأحقاف","محمد","الفتح","الحجرات","ق","الذاريات","الطور","النجم",
+    "القمر","الرحمن","الواقعة","الحديد","المجادلة","الحشر","الممتحنة","الصف","الجمعة","المنافقون",
+    "التغابن","الطلاق","التحريم","الملك","القلم","الحاقة","المعارج","نوح","الجن","المزمل","المدثر",
+    "القيامة","الإنسان","المرسلات","النبأ","النازعات","عبس","التكوير","الإنفطار","المطففين",
+    "الإنشقاق","البروج","الطارق","الأعلى","الغاشية","الفجر","البلد","الشمس","الليل","الضحى",
+    "الشرح","التين","العلق","القدر","البينة","الزلزلة","العاديات","القارعة","التكاثر","العصر",
+    "الهمزة","الفيل","قريش","الماعون","الكوثر","الكافرون","النصر","المسد","الإخلاص","الفلق","الناس",
+]
+
+
+def load_arabic_text(surah: int, ayah: int) -> str:
+    """Read Arabic Uthmani text from the local static file (no network call)."""
+    if not os.path.exists(ARABIC_FILE):
+        raise FileNotFoundError(
+            f"{ARABIC_FILE} not found. Run scripts/build_quran_data.py once "
+            f"and commit quran_arabic.json to the repo."
+        )
+    with open(ARABIC_FILE, "r", encoding="utf-8") as f:
+        quran = json.load(f)
+    key = f"{surah}:{ayah}"
+    if key not in quran:
+        raise KeyError(f"Ayah {key} not found in {ARABIC_FILE}")
+    return quran[key]
+
+
+def get_translation(surah: int, ayah: int) -> tuple[str, str]:
+    """Fetch English + Urdu translations from AlQuran.cloud (Arabic no longer needed here)."""
+    editions = "en.sahih,ur.jalandhry"
     url = f"https://api.alquran.cloud/v1/ayah/{surah}:{ayah}/editions/{editions}"
-    print(f"🌐 Fetching {surah}:{ayah} from AlQuran.cloud …")
-    req = urllib.request.Request(url, headers={"User-Agent": "QuranDailyBot/5.0"})
+    print(f"🌐 Fetching translations for {surah}:{ayah} from AlQuran.cloud …")
+    req = urllib.request.Request(url, headers={"User-Agent": "QuranDailyBot/6.0"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     if data.get("code") != 200:
         raise RuntimeError(f"AlQuran API error: {data}")
     results = data["data"]
+    return results[0]["text"], results[1]["text"]
+
+
+def get_verse(surah: int, ayah: int) -> dict:
+    arabic = load_arabic_text(surah, ayah)
+    english, urdu = get_translation(surah, ayah)
+
     return {
         "surah_number":  surah,
         "ayah_number":   ayah,
-        "surah_name_en": results[0]["surah"]["englishName"],
-        "surah_name_ar": results[0]["surah"]["name"],
-        "arabic":        results[0]["text"],
-        "english":       results[1]["text"],
-        "urdu":          results[2]["text"],
+        "surah_name_en": SURAH_NAMES_EN[surah],
+        "surah_name_ar": SURAH_NAMES_AR[surah],
+        "arabic":        arabic,
+        "english":       english,
+        "urdu":          urdu,
     }
 
 
