@@ -1,0 +1,35 @@
+name: (One-Time) Build Quran Arabic Data File
+
+# Run this ONCE manually from the Actions tab, then you can delete this file.
+on:
+  workflow_dispatch:
+
+jobs:
+  build-data:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build quran_arabic.json
+        run: |
+          cd scripts
+          python build_quran_data.py
+
+      - name: Commit quran_arabic.json
+        run: |
+          git config user.name  "quran-bot"
+          git config user.email "quran-bot@users.noreply.github.com"
+          git add scripts/quran_arabic.json
+          git commit -m "chore: add static Quran Arabic text (Tanzil/Uthmani, one-time build)"
+          git push
