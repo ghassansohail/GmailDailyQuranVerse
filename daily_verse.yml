@@ -23,11 +23,47 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system dependencies for Arabic text shaping
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libraqm0 libfribidi0 libharfbuzz0b
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Debug — verify font files
+        run: |
+          echo "── Font file sizes ──"
+          ls -la fonts/
+          echo ""
+          echo "── Pillow raqm (complex text shaping) support ──"
+          python3 -c "
+          from PIL import features
+          print('raqm support:', features.check('raqm'))
+          try:
+              print('raqm version:', features.version('raqm'))
+          except Exception as e:
+              print('raqm version check failed:', e)
+          "
+          echo ""
+          echo "── Test font loading in Python ──"
+          python3 -c "
+          from PIL import ImageFont
+          import os
+          for f in os.listdir('fonts'):
+              path = os.path.join('fonts', f)
+              try:
+                  font = ImageFont.truetype(path, 40)
+                  print(f'✅ {f} loaded OK')
+              except Exception as e:
+                  print(f'❌ {f} FAILED: {e}')
+          "
+
       - name: Send today's Quran verse
         env:
           GMAIL_ADDRESS:      ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-        run: python scripts/send_verse.py
+        run: python send_verse.py
 
       - name: Commit updated verse pointer
         run: |

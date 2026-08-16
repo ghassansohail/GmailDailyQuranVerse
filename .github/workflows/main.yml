@@ -23,6 +23,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system dependencies for Arabic text shaping
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libraqm0 libfribidi0 libharfbuzz0b
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
@@ -31,8 +36,15 @@ jobs:
           echo "── Font file sizes ──"
           ls -la fonts/
           echo ""
-          echo "── Font file types ──"
-          file fonts/*.ttf
+          echo "── Pillow raqm (complex text shaping) support ──"
+          python3 -c "
+          from PIL import features
+          print('raqm support:', features.check('raqm'))
+          try:
+              print('raqm version:', features.version('raqm'))
+          except Exception as e:
+              print('raqm version check failed:', e)
+          "
           echo ""
           echo "── Test font loading in Python ──"
           python3 -c "
