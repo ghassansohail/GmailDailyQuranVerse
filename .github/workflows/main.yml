@@ -1,30 +1,58 @@
 name: Daily Quran Verse
+
 on:
   schedule:
     # 07:00 AM GST (Bahrain/UAE) = 03:00 UTC
     - cron: "0 3 * * *"
   workflow_dispatch:
+
 jobs:
   send-verse:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Debug — verify font files
+        run: |
+          echo "── Font file sizes ──"
+          ls -la fonts/
+          echo ""
+          echo "── Font file types ──"
+          file fonts/*.ttf
+          echo ""
+          echo "── Test font loading in Python ──"
+          python3 -c "
+          from PIL import ImageFont
+          import os
+          for f in os.listdir('fonts'):
+              path = os.path.join('fonts', f)
+              try:
+                  font = ImageFont.truetype(path, 40)
+                  print(f'✅ {f} loaded OK')
+              except Exception as e:
+                  print(f'❌ {f} FAILED: {e}')
+          "
+
       - name: Send today's Quran verse
         env:
           GMAIL_ADDRESS:      ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: python send_verse.py
+
       - name: Commit updated verse pointer
         run: |
           git config user.name  "quran-bot"
