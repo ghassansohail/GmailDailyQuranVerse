@@ -17,6 +17,9 @@ import smtplib
 import urllib.request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
+
+from generate_verse_image import generate_verse_image
 
 # ── Quran metadata: (surah_number, total_ayahs) ──────────────────────────────
 SURAHS = [
@@ -105,7 +108,7 @@ def load_arabic_text(surah: int, ayah: int) -> str:
     """Read Arabic Uthmani text from the local static file (no network call)."""
     if not os.path.exists(ARABIC_FILE):
         raise FileNotFoundError(
-            f"{ARABIC_FILE} not found. Run scripts/build_quran_data.py once "
+            f"{ARABIC_FILE} not found. Run build_quran_data.py once "
             f"and commit quran_arabic.json to the repo."
         )
     with open(ARABIC_FILE, "r", encoding="utf-8") as f:
@@ -147,14 +150,14 @@ def get_verse(surah: int, ayah: int) -> dict:
 
 # ── Email builder ─────────────────────────────────────────────────────────────
 
-def build_email(v: dict) -> MIMEMultipart:
+def build_email(v: dict, image_path: str) -> MIMEMultipart:
     subject = f"🌙 Quran Daily — Surah {v['surah_number']} ({v['surah_name_en']}), Ayah {v['ayah_number']}"
 
     whatsapp = (
         f"🌙 *Quran — Daily Verse*\n"
         f"📖 *Surah {v['surah_number']}: {v['surah_name_en']}* ({v['surah_name_ar']}) | *Ayah {v['ayah_number']}*\n"
         f"➖➖➖➖➖➖➖➖➖➖\n\n"
-        f"🔤 *Arabic:*\n{v['arabic']}\n\n"
+        f"🔤 *Arabic:*\n*{v['arabic']}*\n\n"
         f"🇬🇧 *English:*\n_{v['english']}_\n\n"
         f"🇵🇰 *Urdu:*\n{v['urdu']}\n\n"
         f"➖➖➖➖➖➖➖➖➖➖\n"
@@ -172,9 +175,11 @@ def build_email(v: dict) -> MIMEMultipart:
     )
 
     body = (
-        f"— WHATSAPP —\n\n{whatsapp}\n\n\n"
+        f"📎 Verse image attached — ready to share directly on WhatsApp/Instagram.\n\n"
         f"{'═' * 40}\n\n"
-        f"— INSTAGRAM —\n\n{instagram}"
+        f"— WHATSAPP (text) —\n\n{whatsapp}\n\n\n"
+        f"{'═' * 40}\n\n"
+        f"— INSTAGRAM (text) —\n\n{instagram}"
     )
 
     msg = MIMEMultipart()
@@ -182,6 +187,11 @@ def build_email(v: dict) -> MIMEMultipart:
     msg["From"]    = f"Quran Daily <{GMAIL_ADDRESS}>"
     msg["To"]      = GMAIL_ADDRESS
     msg.attach(MIMEText(body, "plain", "utf-8"))
+
+    with open(image_path, "rb") as f:
+        img_attachment = MIMEImage(f.read(), name="quran_verse.png")
+    msg.attach(img_attachment)
+
     return msg
 
 
@@ -207,7 +217,11 @@ def main():
     print(f"📌 Today's verse: Surah {surah}, Ayah {ayah}")
 
     verse = get_verse(surah, ayah)
-    msg   = build_email(verse)
+
+    image_path = os.path.join(os.path.dirname(__file__), "today_verse.png")
+    generate_verse_image(verse, image_path)
+
+    msg = build_email(verse, image_path)
     send_email(msg)
 
     next_s, next_a = next_verse(surah, ayah)
