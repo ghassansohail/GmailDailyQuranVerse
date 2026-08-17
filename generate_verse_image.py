@@ -4,12 +4,15 @@ Generates a beautifully formatted image of a Quran verse
 (Arabic + English + Urdu), with the Arabic rendered large and bold
 using a proper Quranic typeface, dynamically sized to fit any verse
 length — from short (Al-Ikhlas) to very long (Ayat Al-Kursi and beyond).
+
+Uses Pillow's native raqm-based text layout (direction="rtl") for
+correct Arabic/Urdu shaping — no manual reshaping libraries needed.
+Requires libfribidi (and ideally libharfbuzz) installed on the system;
+Pillow's own wheel bundles the rest of raqm since Pillow 8.2.0.
 """
 
 import os
-import arabic_reshaper
-from bidi.algorithm import get_display
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, features
 
 FONTS_DIR = os.path.join(os.path.dirname(__file__), "fonts")
 
@@ -25,45 +28,32 @@ TEXT_COLOR   = (30, 30, 30)
 ACCENT_COLOR = (60, 110, 70)        # deep green
 DIVIDER_COLOR = (210, 200, 180)
 
-
-def shape_arabic(text: str) -> str:
-    """Reshape Arabic text so letters join correctly, then fix bidi order."""
-    reshaped = arabic_reshaper.reshape(text)
-    return get_display(reshaped)
+RAQM_AVAILABLE = features.check("raqm")
 
 
-def wrap_text_rtl(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.Draw) -> list[str]:
-    """
-    Wrap already-shaped RTL text at word boundaries to fit max_width.
-    Words are split on the ORIGINAL text before shaping — so we shape
-    per-line after splitting, since reshape() must run on full logical text.
-    """
+def rtl_kwargs() -> dict:
+    """Extra kwargs to pass to draw.text()/textbbox() for RTL shaping, if available."""
+    return {"direction": "rtl"} if RAQM_AVAILABLE else {}
+
+
+def text_width(draw: ImageDraw.Draw, text: str, font: ImageFont.FreeTypeFont, rtl: bool = False) -> int:
+    kwargs = rtl_kwargs() if rtl else {}
+    bbox = draw.textbbox((0, 0), text, font=font, **kwargs)
+    return bbox[2] - bbox[0]
+
+
+def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int,
+              draw: ImageDraw.Draw, rtl: bool = False) -> list[str]:
+    """Wrap text at word boundaries to fit max_width. Words stay in logical
+    (reading) order in the returned strings — Pillow's raqm layout handles
+    correct RTL glyph direction and joining at draw time via direction='rtl'."""
     words = text.split(" ")
     lines, current = [], []
 
-    for word in words:
-        trial = current + [word]
-        trial_text = shape_arabic(" ".join(trial))
-        bbox = draw.textbbox((0, 0), trial_text, font=font)
-        width = bbox[2] - bbox[0]
-        if width <= max_width or not current:
-            current = trial
-        else:
-            lines.append(" ".join(current))
-            current = [word]
-    if current:
-        lines.append(" ".join(current))
-    return lines
-
-
-def wrap_text_ltr(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw: ImageDraw.Draw) -> list[str]:
-    words = text.split(" ")
-    lines, current = [], []
     for word in words:
         trial = current + [word]
         trial_text = " ".join(trial)
-        bbox = draw.textbbox((0, 0), trial_text, font=font)
-        width = bbox[2] - bbox[0]
+        width = text_width(draw, trial_text, font, rtl=rtl)
         if width <= max_width or not current:
             current = trial
         else:
@@ -74,43 +64,32 @@ def wrap_text_ltr(text: str, font: ImageFont.FreeTypeFont, max_width: int, draw:
     return lines
 
 
-def fit_arabic_font(text: str, max_width: int, draw: ImageDraw.Draw,
-                     min_size: int = 34, max_size: int = 82,
-                     max_lines: int = 10) -> tuple[ImageFont.FreeTypeFont, list[str]]:
-    """
-    Try decreasing font sizes until the Arabic verse wraps into a
-    reasonable number of lines that all fit within max_width.
-    Returns the chosen font and the wrapped (shaped, bidi-ordered) lines.
-    """
-    for size in range(max_size, min_size - 1, -2):
-        font = ImageFont.truetype(FONT_ARABIC, size)
-        lines = wrap_text_rtl(text, font, max_width, draw)
-        if len(lines) <= max_lines:
-            shaped_lines = [shape_arabic(line) for line in lines]
-            return font, shaped_lines
-    # Fallback: use min size regardless of line count
-    font = ImageFont.truetype(FONT_ARABIC, min_size)
-    lines = wrap_text_rtl(text, font, max_width, draw)
-    shaped_lines = [shape_arabic(line) for line in lines]
-    return font, shaped_lines
-
-
-def fit_wrapped_font(text: str, max_width: int, draw: ImageDraw.Draw, font_path: str,
-                      min_size: int = 24, max_size: int = 40,
-                      max_lines: int = 12, rtl: bool = False) -> tuple[ImageFont.FreeTypeFont, list[str]]:
-    wrap_fn = wrap_text_rtl if rtl else wrap_text_ltr
+def fit_font(text: str, max_width: int, draw: ImageDraw.Draw, font_path: str,
+             min_size: int, max_size: int, max_lines: int,
+             rtl: bool = False) -> tuple[ImageFont.FreeTypeFont, list[str]]:
+    """Try decreasing font sizes until the text wraps into an acceptable
+    number of lines that all fit within max_width."""
     for size in range(max_size, min_size - 1, -2):
         font = ImageFont.truetype(font_path, size)
-        lines = wrap_fn(text, font, max_width, draw)
+        lines = wrap_text(text, font, max_width, draw, rtl=rtl)
         if len(lines) <= max_lines:
-            if rtl:
-                lines = [shape_arabic(l) for l in lines]
             return font, lines
     font = ImageFont.truetype(font_path, min_size)
-    lines = wrap_fn(text, font, max_width, draw)
-    if rtl:
-        lines = [shape_arabic(l) for l in lines]
+    lines = wrap_text(text, font, max_width, draw, rtl=rtl)
     return font, lines
+
+
+def draw_line(draw: ImageDraw.Draw, xy: tuple[float, float], text: str,
+              font: ImageFont.FreeTypeFont, fill, anchor: str, rtl: bool = False) -> None:
+    kwargs = rtl_kwargs() if rtl else {}
+    draw.text(xy, text, font=font, fill=fill, anchor=anchor, **kwargs)
+
+
+def line_height(draw: ImageDraw.Draw, font: ImageFont.FreeTypeFont, sample: str,
+                 spacing_ratio: float, rtl: bool = False) -> int:
+    kwargs = rtl_kwargs() if rtl else {}
+    bbox = draw.textbbox((0, 0), sample, font=font, **kwargs)
+    return int((bbox[3] - bbox[1]) * spacing_ratio)
 
 
 def generate_verse_image(verse: dict, output_path: str) -> None:
@@ -122,50 +101,48 @@ def generate_verse_image(verse: dict, output_path: str) -> None:
     """
     content_width = CANVAS_WIDTH - 2 * PADDING
 
-    # Use a throwaway image/draw context for measuring during the fit passes
     probe_img = Image.new("RGB", (CANVAS_WIDTH, 100), BG_COLOR)
     probe_draw = ImageDraw.Draw(probe_img)
 
-    # ---- Fit each text block ----
     header_font = ImageFont.truetype(FONT_HEADER, 34)
+    label_font  = ImageFont.truetype(FONT_HEADER, 20)
 
-    arabic_font, arabic_lines = fit_arabic_font(
-        verse["arabic"], content_width, probe_draw,
-        min_size=34, max_size=82, max_lines=10
+    arabic_font, arabic_lines = fit_font(
+        verse["arabic"], content_width, probe_draw, FONT_ARABIC,
+        min_size=34, max_size=82, max_lines=10, rtl=True
     )
-    english_font, english_lines = fit_wrapped_font(
+    english_font, english_lines = fit_font(
         verse["english"], content_width, probe_draw, FONT_ENGLISH,
         min_size=22, max_size=30, max_lines=8, rtl=False
     )
-    urdu_font, urdu_lines = fit_wrapped_font(
+    urdu_font, urdu_lines = fit_font(
         verse["urdu"], content_width, probe_draw, FONT_URDU,
         min_size=30, max_size=42, max_lines=8, rtl=True
     )
 
     # ---- Compute dynamic canvas height ----
-    def block_height(lines, font, line_spacing_ratio=1.5):
-        bbox = probe_draw.textbbox((0, 0), "Ay" if font.path != FONT_ARABIC else "بي", font=font)
-        line_h = (bbox[3] - bbox[1]) * line_spacing_ratio
-        return int(line_h * len(lines))
+    arabic_line_h  = line_height(probe_draw, arabic_font,  "بي", 1.7, rtl=True)
+    english_line_h = line_height(probe_draw, english_font, "Ay", 1.4, rtl=False)
+    urdu_line_h    = line_height(probe_draw, urdu_font,    "بی", 1.8, rtl=True)
 
     header_h  = 60
-    arabic_h  = block_height(arabic_lines, arabic_font, 1.7)
-    english_h = block_height(english_lines, english_font, 1.4)
-    urdu_h    = block_height(urdu_lines, urdu_font, 1.8)
-    label_h   = 40   # small caption above each block
+    arabic_h  = arabic_line_h  * len(arabic_lines)
+    english_h = english_line_h * len(english_lines)
+    urdu_h    = urdu_line_h    * len(urdu_lines)
+    label_h   = 40
     divider_h = 30
     footer_h  = 70
 
     total_height = (
         PADDING
         + header_h + 30
-        + label_h + arabic_h + divider_h
+        + label_h + arabic_h + divider_h + 40
         + label_h + english_h + divider_h
         + label_h + urdu_h + divider_h
         + footer_h
         + PADDING
     )
-    total_height = max(total_height, 700)  # sensible minimum
+    total_height = max(total_height, 700)
 
     # ---- Render final image ----
     img = Image.new("RGB", (CANVAS_WIDTH, total_height), BG_COLOR)
@@ -175,8 +152,7 @@ def generate_verse_image(verse: dict, output_path: str) -> None:
 
     # Header
     header_text = f"Surah {verse['surah_number']}: {verse['surah_name_en']}  ({verse['surah_name_ar']})  |  Ayah {verse['ayah_number']}"
-    bbox = draw.textbbox((0, 0), header_text, font=header_font)
-    header_w = bbox[2] - bbox[0]
+    header_w = text_width(draw, header_text, header_font)
     draw.text(((CANVAS_WIDTH - header_w) / 2, y), header_text, font=header_font, fill=ACCENT_COLOR)
     y += header_h
 
@@ -184,42 +160,33 @@ def generate_verse_image(verse: dict, output_path: str) -> None:
     y += 30
 
     # Arabic label + block (right-aligned, bold, large)
-    label_font = ImageFont.truetype(FONT_HEADER, 20)
-    draw.text((CANVAS_WIDTH - PADDING, y), shape_arabic("النص العربي"), font=label_font,
-               fill=ACCENT_COLOR, anchor="ra")
+    draw_line(draw, (CANVAS_WIDTH - PADDING, y), "النص العربي", label_font, ACCENT_COLOR, "ra", rtl=True)
     y += label_h
 
-    line_bbox = draw.textbbox((0, 0), "بي", font=arabic_font)
-    arabic_line_h = int((line_bbox[3] - line_bbox[1]) * 1.7)
     for line in arabic_lines:
-        draw.text((CANVAS_WIDTH - PADDING, y), line, font=arabic_font, fill=TEXT_COLOR, anchor="ra")
+        draw_line(draw, (CANVAS_WIDTH - PADDING, y), line, arabic_font, TEXT_COLOR, "ra", rtl=True)
         y += arabic_line_h
-    y += divider_h - 10
+    y += divider_h + 10
 
     draw.line([(PADDING, y), (CANVAS_WIDTH - PADDING, y)], fill=DIVIDER_COLOR, width=1)
-    y += 20
+    y += 30
 
     # English label + block (left-aligned, italic)
     draw.text((PADDING, y), "English — Sahih International", font=label_font, fill=ACCENT_COLOR)
     y += label_h
-    eng_line_bbox = draw.textbbox((0, 0), "Ay", font=english_font)
-    eng_line_h = int((eng_line_bbox[3] - eng_line_bbox[1]) * 1.4)
     for line in english_lines:
         draw.text((PADDING, y), line, font=english_font, fill=TEXT_COLOR)
-        y += eng_line_h
+        y += english_line_h
     y += divider_h - 10
 
     draw.line([(PADDING, y), (CANVAS_WIDTH - PADDING, y)], fill=DIVIDER_COLOR, width=1)
     y += 20
 
     # Urdu label + block (right-aligned)
-    draw.text((CANVAS_WIDTH - PADDING, y), "اردو ترجمہ — فتح محمد جالندھری", font=label_font,
-               fill=ACCENT_COLOR, anchor="ra")
+    draw_line(draw, (CANVAS_WIDTH - PADDING, y), "اردو ترجمہ — فتح محمد جالندھری", label_font, ACCENT_COLOR, "ra", rtl=True)
     y += label_h
-    urdu_line_bbox = draw.textbbox((0, 0), "بی", font=urdu_font)
-    urdu_line_h = int((urdu_line_bbox[3] - urdu_line_bbox[1]) * 1.8)
     for line in urdu_lines:
-        draw.text((CANVAS_WIDTH - PADDING, y), line, font=urdu_font, fill=TEXT_COLOR, anchor="ra")
+        draw_line(draw, (CANVAS_WIDTH - PADDING, y), line, urdu_font, TEXT_COLOR, "ra", rtl=True)
         y += urdu_line_h
     y += divider_h - 10
 
@@ -229,16 +196,14 @@ def generate_verse_image(verse: dict, output_path: str) -> None:
     # Footer
     footer_font = ImageFont.truetype(FONT_ENGLISH, 22)
     footer_text = "May Allah guide us all. آمین"
-    bbox = draw.textbbox((0, 0), footer_text, font=footer_font)
-    footer_w = bbox[2] - bbox[0]
+    footer_w = text_width(draw, footer_text, footer_font)
     draw.text(((CANVAS_WIDTH - footer_w) / 2, y), footer_text, font=footer_font, fill=(120, 120, 120))
 
     img.save(output_path, "PNG")
-    print(f"✅ Image saved: {output_path} ({CANVAS_WIDTH}x{total_height})")
+    print(f"✅ Image saved: {output_path} ({CANVAS_WIDTH}x{total_height}) — raqm: {RAQM_AVAILABLE}")
 
 
 if __name__ == "__main__":
-    # Quick manual test
     test_verse_short = {
         "surah_number": 112, "ayah_number": 1,
         "surah_name_en": "Al-Ikhlaas", "surah_name_ar": "الإخلاص",
@@ -270,3 +235,4 @@ if __name__ == "__main__":
     os.makedirs("/tmp/verse_images", exist_ok=True)
     generate_verse_image(test_verse_short, "/tmp/verse_images/short.png")
     generate_verse_image(test_verse_long, "/tmp/verse_images/long.png")
+
