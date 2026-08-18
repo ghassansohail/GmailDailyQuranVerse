@@ -64,6 +64,23 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int,
     return lines
 
 
+# Quranic pause/stop annotation marks (rubʿ, waqf signs, etc.) — these are
+# recitation-guide symbols, not part of the spoken text. AmiriQuran + the
+# raqm text-shaping pipeline used here renders them incorrectly (as a
+# stray unrelated glyph), so we strip them for display rather than show
+# a wrong character. This does not affect the correctness of the actual
+# verse text, only removes optional pause-annotation marks.
+_QURANIC_PAUSE_MARKS = "۞۩ۖۗۘۙۚۛ۟ۜ"
+_PAUSE_MARK_TABLE = str.maketrans("", "", _QURANIC_PAUSE_MARKS)
+
+
+def clean_arabic_for_display(text: str) -> str:
+    """Remove Quranic pause/annotation marks that don't render correctly,
+    then collapse any resulting double spaces."""
+    stripped = text.translate(_PAUSE_MARK_TABLE)
+    return " ".join(stripped.split())
+
+
 def fit_font(text: str, max_width: int, draw: ImageDraw.Draw, font_path: str,
              min_size: int, max_size: int, max_lines: int,
              rtl: bool = False) -> tuple[ImageFont.FreeTypeFont, list[str]]:
@@ -108,7 +125,7 @@ def generate_verse_image(verse: dict, output_path: str) -> None:
     label_font  = ImageFont.truetype(FONT_HEADER, 20)
 
     arabic_font, arabic_lines = fit_font(
-        verse["arabic"], content_width, probe_draw, FONT_ARABIC,
+        clean_arabic_for_display(verse["arabic"]), content_width, probe_draw, FONT_ARABIC,
         min_size=34, max_size=82, max_lines=10, rtl=True
     )
     english_font, english_lines = fit_font(
@@ -235,4 +252,3 @@ if __name__ == "__main__":
     os.makedirs("/tmp/verse_images", exist_ok=True)
     generate_verse_image(test_verse_short, "/tmp/verse_images/short.png")
     generate_verse_image(test_verse_long, "/tmp/verse_images/long.png")
-
