@@ -3,7 +3,7 @@ name: Daily Quran Verse
 on:
   schedule:
     # 07:00 AM GST (Bahrain/UAE) = 03:00 UTC
-    - cron: "0 3 * * *"
+   # - cron: "0 3 * * *"
   workflow_dispatch:
 
 jobs:
